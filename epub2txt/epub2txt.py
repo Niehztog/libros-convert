@@ -21,13 +21,13 @@
 """Convert epub to text."""
 # pylint:
 
+from pathlib import Path
 from typing import Any, Callable, List, Union
 
-from pathlib import Path
-
-# for with_func_attrs
-# from typing import Iterable
-from collections import Iterable  # < py38
+try:
+    from collections.abc import Iterable  # python 3.10+
+except ImportError:
+    from collections import Iterable  # python < 3.10
 
 # the rest
 from itertools import zip_longest
@@ -147,7 +147,7 @@ def epub2txt(
             content_string = content_string.replace(u'</i>', u'___SHIFT_OUT_CHARACTER___')
             content_string = content_string.replace(u'<strong>', u'___SHIFT_IN_CHARACTER______SHIFT_IN_CHARACTER___')
             content_string = content_string.replace(u'</strong>', u'___SHIFT_OUT_CHARACTER______SHIFT_OUT_CHARACTER___')
-            content_string = content_string.replace(u'<b>', u'___SHIFT_OUT_CHARACTER______SHIFT_OUT_CHARACTER___')
+            content_string = content_string.replace(u'<b>', u'___SHIFT_IN_CHARACTER______SHIFT_IN_CHARACTER___')
             content_string = content_string.replace(u'</b>', u'___SHIFT_OUT_CHARACTER______SHIFT_OUT_CHARACTER___')
         content = bytes(content_string, 'utf-8')
         root = etree.XML(content)
