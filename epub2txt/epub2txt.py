@@ -1,25 +1,5 @@
-# Copyright (c) 2019 The Python Packaging Authority
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 """Convert epub to text."""
-# pylint:
+# pylint: disable=invalid-name, too-many-branches, too-many-statements, too-many-locals, broad-except, deprecated-class, line-too-long, c-extension-no-member
 
 from pathlib import Path
 from typing import Any, Callable, List, Union
@@ -30,22 +10,28 @@ except ImportError:
     from collections import Iterable  # python < 3.10
 
 # the rest
+# import io
+import tempfile
 from itertools import zip_longest
-import httpx
-import io
-from lxml import etree
-from ebooklib import epub
 
+import ebooklib
+import httpx
 import logzero
+from ebooklib import epub
 from logzero import logger
+from lxml import etree
+
+parser = etree.HTMLParser()
 
 
 def with_func_attrs(**attrs: Any) -> Callable:
-    '''Deco with_func_attrs.'''
+    """Deco with_func_attrs."""
+
     def with_attrs(fct: Callable) -> Callable:
         for key, val in attrs.items():
             setattr(fct, key, val)
         return fct
+
     return with_attrs
 
 
@@ -57,6 +43,24 @@ def flatten_iter(items):
                 yield sub_x
         else:
             yield x
+
+
+def fillin_title(ilist):
+    """Convert NA to chapter title*.
+
+    ['NA', 'NA', 'a', 'NA', 'NA', 'b', 'NA', 'c', 'NA'] =>
+    ['NA', 'NA', 'a', 'a*', 'a*', 'b', 'b*', 'c', 'NA']
+    """
+    lst = ilist[:]
+    tf = [*map(lambda x: x != "NA", lst)]
+
+    prev = None
+    for i in range(tf.index(True), len(tf) - tf[::-1].index(True)):
+        if lst[i] == "NA":
+            lst[i] = prev
+        else:
+            prev = lst[i] + "*"
+    return lst
 
 
 # fmt: off
@@ -83,19 +87,26 @@ def epub2txt(
         logzero.loglevel(20)
 
     # process possible url
-    if filepath.__str__().startswith("http"):
+    if str(filepath).startswith("http"):
         try:
-            resp = httpx.get(filepath, timeout=30)
+            resp = httpx.get(filepath, timeout=30, follow_redirects=True)
             resp.raise_for_status()
         except Exception as exc:
             logger.error("httpx.get(%s) exc: %s", filepath, exc)
             raise
-        cont = io.BytesIO(resp.content)
+        # cont = io.BytesIO(resp.content)
+        with tempfile.NamedTemporaryFile(mode='w+b', delete=False) as tfile:
+            try:
+                tfile.write(resp.content)
+            except Exception as exc:
+                logger.error(exc)
+                raise
+            file_name = tfile.name
 
         try:
-            book = epub.read_epub(cont)
+            book = epub.read_epub(file_name)
         except Exception as exc:
-            logger.error("epub.read_epub(cont) exc: %s", exc)
+            logger.error("epub.read_epub(%s) exc: %s", file_name, exc)
             raise
     else:
         filepath = Path(filepath)
@@ -129,7 +140,25 @@ def epub2txt(
 
     epub2txt.metadata = [*book.metadata.values()]
 
-    contents = [book.get_item_with_id(item[0]).content for item in book.spine]
+    # contents = [book.get_item_with_id(item[0]).content for item in book.spine]
+    contents = [elm.content for elm in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)]
+
+    names = [elm.get_name() for elm in book.get_items_of_type(ebooklib.ITEM_DOCUMENT)]
+
+    epub2txt.names = names
+
+    # content/chapter titles
+    # remove bookmark #: most toc_hrefs correspond to names
+    # _ = [Path(elm).with_suffix('.xhtml').as_posix() for elm in epub2txt.toc_hrefs]
+    _ = [elm.rsplit("#", 1)[0] for elm in epub2txt.toc_hrefs]
+    name2title = dict(zip(_, epub2txt.toc_titles))
+
+    _ = [name2title.get(name, "NA") for name in names]
+    try:
+        epub2txt.content_titles = fillin_title(_)
+    except Exception:
+        epub2txt.content_titles = _
+
     # texts = [pq(content).text() for content in contents]
 
     # Using XPath to find text
@@ -150,12 +179,14 @@ def epub2txt(
             content_string = content_string.replace(u'<b>', u'___SHIFT_IN_CHARACTER______SHIFT_IN_CHARACTER___')
             content_string = content_string.replace(u'</b>', u'___SHIFT_OUT_CHARACTER______SHIFT_OUT_CHARACTER___')
         content = bytes(content_string, 'utf-8')
-        root = etree.XML(content)
+        # root = etree.XML(content)
+        root = etree.XML(content, parser=parser)
         tree = etree.ElementTree(root)
         text = tree.xpath("string()")
         if do_formatting:
             text = text.replace(u'___SHIFT_IN_CHARACTER___', u'\u000f')
             text = text.replace(u'___SHIFT_OUT_CHARACTER___', u'\u000e')
+
         texts.append(text)
 
     if clean:

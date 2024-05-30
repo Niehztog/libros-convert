@@ -52,16 +52,16 @@ print('\nChapters:')
 
 done = False
 chapters_selected = []
-for i in range(0, len(epub2txt.spine)):
-    if epub2txt.spine[i] in ['titlepage.xhtml', 'imprint.xhtml', 'colophon.xhtml', 'uncopyright.xhtml']:
+for i in range(0, len(epub2txt.content_titles)):
+    if epub2txt.content_titles[i] in ['titlepage.xhtml', 'imprint.xhtml', 'colophon.xhtml', 'uncopyright.xhtml']:
         chapters_selected.append(False)
     else:
         chapters_selected.append(True)
 
 while not done:
-    for i in range(0, len(epub2txt.spine)):
+    for i in range(0, len(epub2txt.content_titles)):
         selected = '*' if chapters_selected[i] else ' '
-        print(f'{i + 1:3}. [{selected}] {epub2txt.spine[i]}')
+        print(f'{i + 1:3}. [{selected}] {epub2txt.content_titles[i]}')
     i = input('Enter a chapter number to toggle its inclusion, or a blank line when finished: ')
     if i:
         chapters_selected[int(i) - 1] = not chapters_selected[int(i) - 1]
