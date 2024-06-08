@@ -21,7 +21,7 @@ from ebooklib import epub
 from logzero import logger
 from lxml import etree
 
-parser = etree.HTMLParser()
+parser = etree.HTMLParser(encoding="utf-8")
 
 
 def with_func_attrs(**attrs: Any) -> Callable:
@@ -167,7 +167,8 @@ def epub2txt(
     # text = tree.xpath("string()")   # pq(content).text()
 
     texts = []
-    for content in contents:
+    for index, content in enumerate(reversed(contents)):
+        reverse_index = len(contents) - 1 - index
         content_string = content.decode('utf-8')
         if do_formatting:
             content_string = content_string.replace(u'<em>', u'___SHIFT_IN_CHARACTER___')
@@ -182,12 +183,16 @@ def epub2txt(
         # root = etree.XML(content)
         root = etree.XML(content, parser=parser)
         tree = etree.ElementTree(root)
-        text = tree.xpath("string()")
+        text = tree.xpath("string(//body)")
         if do_formatting:
             text = text.replace(u'___SHIFT_IN_CHARACTER___', u'\u000f')
             text = text.replace(u'___SHIFT_OUT_CHARACTER___', u'\u000e')
 
-        texts.append(text)
+        if text.strip():
+            texts.insert(0, text)
+        else:
+            epub2txt.content_titles.pop(reverse_index)
+            epub2txt.spine.pop(reverse_index)
 
     if clean:
         temp = []
