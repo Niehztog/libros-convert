@@ -20,6 +20,7 @@ import logzero
 from ebooklib import epub
 from logzero import logger
 from lxml import etree
+import re
 
 parser = etree.HTMLParser(encoding="utf-8")
 
@@ -187,6 +188,7 @@ def epub2txt(
         if do_formatting:
             text = text.replace(u'___SHIFT_IN_CHARACTER___', u'\u000f')
             text = text.replace(u'___SHIFT_OUT_CHARACTER___', u'\u000e')
+            text = re.sub(r'^\s*([0-9]+)\s*[\n]+\s*(.+)', r'\1 \2', text)
 
         if text.strip():
             texts.insert(0, text)
